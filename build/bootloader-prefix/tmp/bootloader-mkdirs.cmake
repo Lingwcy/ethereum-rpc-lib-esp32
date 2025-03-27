@@ -10,18 +10,18 @@ if(NOT EXISTS "/home/ling/esp/v5.4/esp-idf/components/bootloader/subproject")
   file(MAKE_DIRECTORY "/home/ling/esp/v5.4/esp-idf/components/bootloader/subproject")
 endif()
 file(MAKE_DIRECTORY
-  "/home/ling/桌面/ethereum-rpc-lib-esp32/build/bootloader"
-  "/home/ling/桌面/ethereum-rpc-lib-esp32/build/bootloader-prefix"
-  "/home/ling/桌面/ethereum-rpc-lib-esp32/build/bootloader-prefix/tmp"
-  "/home/ling/桌面/ethereum-rpc-lib-esp32/build/bootloader-prefix/src/bootloader-stamp"
-  "/home/ling/桌面/ethereum-rpc-lib-esp32/build/bootloader-prefix/src"
-  "/home/ling/桌面/ethereum-rpc-lib-esp32/build/bootloader-prefix/src/bootloader-stamp"
+  "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build/bootloader"
+  "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build/bootloader-prefix"
+  "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build/bootloader-prefix/tmp"
+  "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build/bootloader-prefix/src/bootloader-stamp"
+  "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build/bootloader-prefix/src"
+  "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build/bootloader-prefix/src/bootloader-stamp"
 )
 
 set(configSubDirs )
 foreach(subDir IN LISTS configSubDirs)
-    file(MAKE_DIRECTORY "/home/ling/桌面/ethereum-rpc-lib-esp32/build/bootloader-prefix/src/bootloader-stamp/${subDir}")
+    file(MAKE_DIRECTORY "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build/bootloader-prefix/src/bootloader-stamp/${subDir}")
 endforeach()
 if(cfgdir)
-  file(MAKE_DIRECTORY "/home/ling/桌面/ethereum-rpc-lib-esp32/build/bootloader-prefix/src/bootloader-stamp${cfgdir}") # cfgdir has leading slash
+  file(MAKE_DIRECTORY "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build/bootloader-prefix/src/bootloader-stamp${cfgdir}") # cfgdir has leading slash
 endif()

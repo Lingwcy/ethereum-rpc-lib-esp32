@@ -94,6 +94,11 @@ esp_err_t web3_send_request(web3_context_t* context, const char* method,
         return ESP_ERR_INVALID_ARG;
     }
     
+    // Check if buffer size is reasonable
+    if (result_len < 128) {
+        ESP_LOGW(TAG, "Response buffer size %zu might be too small for RPC responses", result_len);
+    }
+    
     // 清空结果缓冲区
     memset(result, 0, result_len);
     

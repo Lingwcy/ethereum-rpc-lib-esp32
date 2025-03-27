@@ -11,6 +11,7 @@
 #include "ethereum-lib/eth_rpc.h"
 #include "ethereum-lib/net_test.h"
 
+#include "cJSON.h"
 static const char *TAG = "ETHEREUM_TEST";
 
 /* FreeRTOS事件组，用于WiFi事件处理 */
@@ -82,85 +83,216 @@ void wifi_init_sta()
     }
 }
 
+// Test network account details
+typedef struct {
+    const char* address;
+    const char* private_key;
+} eth_account_t;
+
+// Test account data
+static const eth_account_t test_accounts[] = {
+    {
+        .address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", // anvil default account
+        .private_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
+    },
+    {
+        .address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", // anvil account #1
+        .private_key = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+    }
+};
+
+// 测试交易签名功能
+void test_transaction_signing(web3_context_t* context) {
+    ESP_LOGI(TAG, "测试交易签名...");
+    
+    // 准备交易参数
+    const char* from_address = test_accounts[0].address;
+    const char* to_address = test_accounts[1].address;
+    const char* value = "0xDE0B6B3A7640000"; // 转账金额 1 ETH (1 ETH = 10^18 Wei)
+    const char* gas = "0x5208"; // 21000 gas - 标准转账所需的gas量
+    
+    // 获取账户nonce
+    char nonce[32] = {0};
+    esp_err_t err = eth_getTransactionCount(context, from_address, nonce, sizeof(nonce));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "获取nonce失败: %s", esp_err_to_name(err));
+        return;
+    }
+    ESP_LOGI(TAG, "当前账户nonce: %s", nonce);
+    
+    // 获取当前gas价格
+    char gas_price[64] = {0};
+    err = get_eth_gasPrice(context, gas_price, sizeof(gas_price));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "获取gas价格失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    // 正确地提取十六进制gas价格部分
+    char gas_price_hex[32] = {0};
+    if (strncmp(gas_price, "0x", 2) == 0) {
+        // 找到十六进制字符串的结束位置 (空格或括号处)
+        char* end = strchr(gas_price, ' ');
+        if (!end) {
+            end = strchr(gas_price, '(');
+        }
+        
+        if (end) {
+            size_t hex_len = end - gas_price;
+            strncpy(gas_price_hex, gas_price, hex_len);
+            gas_price_hex[hex_len] = '\0';
+        } else {
+            // 如果没找到分隔符，复制整个字符串
+            strcpy(gas_price_hex, gas_price);
+        }
+    } else {
+        // 如果不是以0x开头，使用默认值
+        strcpy(gas_price_hex, "0x1");
+    }
+    ESP_LOGI(TAG, "当前gas价格 (仅十六进制部分): %s", gas_price_hex);
+    
+    // 对于简单的ETH转账，data字段为空
+    const char* data = "0x"; // 或NULL
+    
+    // 签名交易
+    char signed_tx[1024] = {0};
+    err = eth_signTransaction(
+        context,
+        from_address,
+        to_address,
+        gas,
+        gas_price_hex,  // 使用提取的纯十六进制gas价格
+        value,
+        data,
+        nonce,
+        signed_tx,
+        sizeof(signed_tx)
+    );
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "交易签名失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    ESP_LOGI(TAG, "交易签名成功: %s", signed_tx);
+    
+    // 可选: 发送已签名的交易
+    char tx_hash[128] = {0};
+    if (true) { // 设置为true以实际发送交易
+        err = eth_sendRawTransaction(context, signed_tx, tx_hash, sizeof(tx_hash));
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "发送交易失败: %s", esp_err_to_name(err));
+            return;
+        }
+        ESP_LOGI(TAG, "交易已发送，交易哈希: %s", tx_hash);
+    }
+}
+
+// 调用ERC20代币合约transfer函数示例
+void test_erc20_transfer(web3_context_t* context) {
+    ESP_LOGI(TAG, "测试ERC20代币转账签名...");
+    
+    // 准备交易参数
+    const char* from_address = test_accounts[0].address;
+    const char* token_contract = "0x5FbDB2315678afecb367f032d93F642f64180aa3"; // 假设的ERC20合约地址
+    const char* to_address = test_accounts[1].address;
+    const char* gas = "0x15F90"; // 90000 gas (合约调用需要更多gas)
+    
+    // 构造ERC20 transfer方法的data字段
+    // 格式: 0x + 方法签名(4字节) + 参数(填充到32字节)
+    // transfer(address,uint256) => 0xa9059cbb
+    // 参数1: 接收地址 (右对齐到32字节)
+    // 参数2: 代币数量 (右对齐到32字节)
+    char data[256];
+    snprintf(data, sizeof(data), 
+             "0xa9059cbb000000000000000000000000%s0000000000000000000000000000000000000000000000000000000000000064", 
+             to_address + 2); // 去掉地址的0x前缀，转账金额为100 (0x64)
+    
+    // 获取账户nonce
+    char nonce[32] = {0};
+    esp_err_t err = eth_getTransactionCount(context, from_address, nonce, sizeof(nonce));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "获取nonce失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    // 签名交易
+    char signed_tx[1024] = {0};
+    err = eth_signTransaction(
+        context,
+        from_address,
+        token_contract,
+        gas,
+        "0x1", // 简化的gas价格
+        "0x0", // 不发送ETH
+        data,
+        nonce,
+        signed_tx,
+        sizeof(signed_tx)
+    );
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ERC20交易签名失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    ESP_LOGI(TAG, "ERC20交易签名成功: %s", signed_tx);
+}
+
 void ethereum_test_task(void *pvParameter)
-{
-    const char* eth_url = "http://192.168.1.112:8545";
-    const char* wallet_address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
+{   
+    const char* eth_url = "http://192.168.1.112:8545"; // Hardhat/Ganache RPC URL
     
     // 先测试网络连接
-    ESP_LOGI(TAG, "Testing network connection to Ethereum node...");
+    ESP_LOGI(TAG, "测试到以太坊节点的网络连接...");
     esp_err_t conn_err = test_url_connection(eth_url, 5000);
     if (conn_err != ESP_OK) {
-        ESP_LOGE(TAG, "Network connectivity test failed: %s", esp_err_to_name(conn_err));
-        ESP_LOGE(TAG, "Please check if:");
-        ESP_LOGE(TAG, "1. Ethereum node is running on %s", eth_url);
-        ESP_LOGE(TAG, "2. Firewall allows connections to this address/port");
-        ESP_LOGE(TAG, "3. Node is configured to accept external connections (--rpc-external or --host 0.0.0.0)");
+        ESP_LOGE(TAG, "网络连接测试失败: %s", esp_err_to_name(conn_err));
+        ESP_LOGE(TAG, "请检查:");
+        ESP_LOGE(TAG, "1. 以太坊节点是否在 %s 上运行", eth_url);
+        ESP_LOGE(TAG, "2. 防火墙是否允许连接到此地址/端口");
+        ESP_LOGE(TAG, "3. 节点是否配置为接受外部连接 (--rpc-external 或 --host 0.0.0.0)");
         vTaskDelete(NULL);
         return;
     }
     
     /* 初始化web3上下文 */
     web3_context_t context;
-    ESP_LOGI(TAG, "Network connectivity test successful, initializing Web3...");
+    ESP_LOGI(TAG, "网络连接测试成功，初始化Web3...");
     esp_err_t err = web3_init(&context, eth_url);
     
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "Failed to initialize web3: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "初始化web3失败: %s", esp_err_to_name(err));
         vTaskDelete(NULL);
         return;
     }
     
-    /* 获取初始区块号 */
-    uint64_t block_number;
-    err = eth_get_block_number(&context, &block_number);
+    
+    /* 获取以太坊客户端版本 */
+    char client_version[128] = {0};
+    err = eth_get_client_version(&context, client_version, sizeof(client_version));
     if (err == ESP_OK) {
-        ESP_LOGI(TAG, "区块高度: %llu", block_number);
+        ESP_LOGI(TAG, "以太坊客户端版本: %s", client_version);
     } else {
-        ESP_LOGE(TAG, "获取区块高度失败: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "获取客户端版本失败: %s", esp_err_to_name(err));
+    }
+
+    /* 获取网络ID */
+    char network_id[32] = {0};
+    err = eth_get_net_version(&context, network_id, sizeof(network_id));
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "网络ID: %s", network_id);
+    } else {
+        ESP_LOGE(TAG, "获取网络ID失败: %s", esp_err_to_name(err));
     }
     
-    // 循环检测ETH余额和区块高度，每10秒一次
-    ESP_LOGI(TAG, "钱包周期性检查: %s", wallet_address);
-    ESP_LOGI(TAG, "每 10 秒 一次...");
+    /* 测试交易签名功能 */
+    test_transaction_signing(&context);
     
-    int check_count = 0;
-    while(1) {
-        check_count++;
-        ESP_LOGI(TAG, "------------------ 检查 #%d ------------------", check_count);
-        
-        /* 获取区块高度 */
-        uint64_t current_block;
-        err = eth_get_block_number(&context, &current_block);
-        if (err == ESP_OK) {
-            ESP_LOGI(TAG, "当前区块高度: %llu", current_block);
-            
-            // 如果区块高度有变化，显示增加了多少个区块
-            if (check_count > 1 && current_block > block_number) {
-                ESP_LOGI(TAG, "自从上次检查更新了 %llu 个区块", 
-                        current_block - block_number);
-            }
-            block_number = current_block; // 更新区块高度
-        } else {
-            ESP_LOGW(TAG, "Block number check failed: %s", esp_err_to_name(err));
-        }
-        
-        /* 获取ETH余额 */
-        char balance[256] = {0};
-        err = eth_get_balance(&context, wallet_address, balance, sizeof(balance));
-        
-        if (err == ESP_OK) {
-            ESP_LOGI(TAG, "账户余额(Wei): %s", balance);
-        } else {
-            ESP_LOGW(TAG, "余额检查失败: %s", esp_err_to_name(err));
-        }
-        
-        // 延时10秒
-        ESP_LOGI(TAG, "等待10秒进行下次检查...");
-        vTaskDelay(pdMS_TO_TICKS(10000));
-    }
+    /* 测试ERC20代币转账签名 (如果有相应合约) */
+    // test_erc20_transfer(&context);
     
-    /* 清理web3上下文 - 注意：这段代码在上面的无限循环中实际上不会执行到 */
+    /* 清理web3上下文 */
     web3_cleanup(&context);
     vTaskDelete(NULL);
 }
