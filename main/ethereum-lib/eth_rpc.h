@@ -183,4 +183,18 @@ esp_err_t eth_sendRawTransaction(web3_context_t* context, const char* signed_dat
 esp_err_t eth_getCode(web3_context_t* context, const char* address, 
                       const char* block_id, char* code, size_t code_len);
 
+/**
+ * @brief 调用智能合约函数 (不修改状态)
+ * 
+ * @param context Web3上下文
+ * @param to_address 合约地址
+ * @param data 编码后的函数调用数据
+ * @param block 区块号或状态 ("latest", "earliest", "pending" 或十六进制区块号)
+ * @param result 结果缓冲区
+ * @param result_len 结果缓冲区长度
+ * @return esp_err_t 操作结果
+ */
+esp_err_t eth_call(web3_context_t* context, const char* to_address, const char* data, 
+                  const char* block, char* result, size_t result_len);
+
 #endif /* ETH_RPC_H */

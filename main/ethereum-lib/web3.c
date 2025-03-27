@@ -128,6 +128,7 @@ esp_err_t web3_send_request(web3_context_t* context, const char* method,
         } else {
             // 如果解析失败，添加一个空数组
             cJSON_AddArrayToObject(root, "params");
+            ESP_LOGW(TAG, "Failed to parse params: %s, using empty array", params);
         }
     } else {
         // 添加空数组作为参数
@@ -143,7 +144,13 @@ esp_err_t web3_send_request(web3_context_t* context, const char* method,
         return ESP_ERR_NO_MEM;
     }
     
-    ESP_LOGI(TAG, "发送请求到 %s: %s", context->url, post_data);
+    // 记录完整URL和请求内容
+    char full_url[256];
+    strncpy(full_url, context->url, sizeof(full_url) - 1);
+    full_url[sizeof(full_url) - 1] = '\0';
+    
+    ESP_LOGI(TAG, "发送请求到 %s: %s", full_url, post_data);
+    esp_http_client_set_url(context->client, full_url); // 确保URL设置正确
     esp_http_client_set_post_field(context->client, post_data, strlen(post_data));
     
     // 执行请求
@@ -158,7 +165,7 @@ esp_err_t web3_send_request(web3_context_t* context, const char* method,
     ESP_LOGI(TAG, "HTTP 状态 = %d", status_code);
     
     if (status_code != 200) {
-        ESP_LOGE(TAG, "HTTP 状态异常%d", status_code);
+        ESP_LOGE(TAG, "HTTP 状态异常 %d", status_code);
         free(post_data);
         return ESP_FAIL;
     }
@@ -167,6 +174,13 @@ esp_err_t web3_send_request(web3_context_t* context, const char* method,
     
     // 如果事件处理器成功收集了响应数据
     if (response_buffer.data_length > 0) {
+        // 确保字符串以null字符结尾
+        if (response_buffer.data_length < result_len) {
+            result[response_buffer.data_length] = '\0';
+        } else {
+            result[result_len - 1] = '\0';
+        }
+        
         ESP_LOGI(TAG, "响应: %s", result);
         return ESP_OK;
     }

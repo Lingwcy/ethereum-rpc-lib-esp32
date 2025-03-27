@@ -6,7 +6,7 @@
     "idf_path":           "/home/ling/esp/v5.4/esp-idf",
     "build_dir":          "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build",
     "config_file":        "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/sdkconfig",
-    "config_defaults":    "",
+    "config_defaults":    "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/sdkconfig.defaults",
     "bootloader_elf":     "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build/bootloader/bootloader.elf",
     "app_elf":            "ethereum-lib-test.elf",
     "app_bin":            "ethereum-lib-test.bin",
@@ -1195,7 +1195,7 @@
             "managed_reqs": [],
             "managed_priv_reqs": [],
             "file": "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build/esp-idf/main/libmain.a",
-            "sources": [ "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/main.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/web3.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/eth_rpc.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/net_test.c" ],
+            "sources": [ "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/main.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/web3.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/eth_rpc.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/net_test.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/eth_abi.c" ],
             "include_dirs": [ "." ]
         },
         "mbedtls": {

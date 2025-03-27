@@ -10,6 +10,7 @@
 #include "ethereum-lib/web3.h"
 #include "ethereum-lib/eth_rpc.h"
 #include "ethereum-lib/net_test.h"
+#include "ethereum-lib/eth_abi.h"
 
 #include "cJSON.h"
 static const char *TAG = "ETHEREUM_TEST";
@@ -238,6 +239,198 @@ void test_erc20_transfer(web3_context_t* context) {
     
     ESP_LOGI(TAG, "ERC20交易签名成功: %s", signed_tx);
 }
+// 测试ABI编码
+void test_abi_encoding(web3_context_t* context) {
+    ESP_LOGI(TAG, "测试ABI编码...");
+
+    // 测试ERC20 transfer函数调用
+    char to_address[42] = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8";  // 目标地址
+    uint8_t to_addr_bytes[20];
+    
+    // 移除0x前缀并转换为二进制
+    for (int i = 0; i < 20; i++) {
+        sscanf(&to_address[2+i*2], "%2hhx", &to_addr_bytes[i]);
+    }
+    
+    // 金额: 1.0 ETH = 1000000000000000000 wei (1后面18个0)
+    uint8_t amount[32] = {0};
+    // 设置为1.0 ETH (大端序)
+    amount[31] = 1; // 最低位设为1
+    
+    // 修复one_eth数组，确保正好32个元素
+    const uint8_t one_eth[32] = {
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x0d, 0xe0, 0xb6, 0xb3
+    };
+
+    // 定义参数
+    abi_param_t params[2] = {
+        ABI_ADDRESS(to_addr_bytes),                   // 接收地址
+        ABI_UINT(256, one_eth)                        // 金额 (1.0 ETH)
+    };
+
+    // 编码函数调用 - 使用更新后的函数签名
+    uint8_t encoded[512] = {0};
+    size_t encoded_len = 0;
+    esp_err_t err = abi_encode_function_call(
+        context,  // 传递web3上下文
+        "transfer(address,uint256)", 
+        params, 
+        2, 
+        encoded, 
+        sizeof(encoded), 
+        &encoded_len
+    );
+
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ABI编码失败: %s", esp_err_to_name(err));
+        return;
+    }
+
+    // 转换为十六进制字符串
+    char hex_data[1024] = {0};
+    err = abi_binary_to_hex(encoded, encoded_len, hex_data, sizeof(hex_data));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "二进制转十六进制失败: %s", esp_err_to_name(err));
+        return;
+    }
+
+    ESP_LOGI(TAG, "编码后的函数调用数据: %s", hex_data);
+    ESP_LOGI(TAG, "数据长度: %d 字节", encoded_len);
+
+
+}
+
+// 测试调用合约函数获取作者信息
+void test_get_author_info(web3_context_t* context) {
+    ESP_LOGI(TAG, "测试调用合约函数获取作者信息...");
+    
+    // 合约地址
+    const char* contract_address = "0x8aCd85898458400f7Db866d53FCFF6f0D49741FF";
+    
+    // 创建函数调用数据 - getAuthorInformation()
+    // 无需参数，仅需函数选择器
+    uint8_t encoded[4] = {0}; // 只需要4字节的函数选择器
+    size_t encoded_len = 0;
+    esp_err_t err = abi_encode_function_call(
+        context,
+        "getAuthorInformation()",
+        NULL, // 无参数
+        0,
+        encoded,
+        sizeof(encoded),
+        &encoded_len
+    );
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "ABI编码函数调用失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    // 转换为十六进制字符串用于eth_call
+    char hex_data[16] = {0}; // 足够容纳0x + 8个十六进制字符
+    err = abi_binary_to_hex(encoded, encoded_len, hex_data, sizeof(hex_data));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "二进制转十六进制失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    ESP_LOGI(TAG, "编码后的函数调用数据: %s", hex_data);
+    
+    // 增加缓冲区大小以处理更大的响应
+    char result[4096] = {0}; // 增加缓冲区大小以处理返回的三个字符串
+    
+    // 使用params缓冲区构造请求参数
+    char params[512];
+    snprintf(params, sizeof(params), 
+             "[{\"to\":\"%s\",\"data\":\"%s\"},\"latest\"]", 
+             contract_address, hex_data);
+    
+    // 直接使用web3_send_request，避免在eth_call中再次格式化参数
+    err = web3_send_request(context, "eth_call", params, result, sizeof(result));
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "调用合约函数失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    // 解析响应
+    ESP_LOGI(TAG, "合约调用响应: %s", result);
+    
+    cJSON *json = cJSON_Parse(result);
+    if (!json) {
+        ESP_LOGE(TAG, "解析JSON响应失败");
+        return;
+    }
+    
+    cJSON *result_obj = cJSON_GetObjectItem(json, "result");
+    if (!result_obj || !cJSON_IsString(result_obj)) {
+        ESP_LOGE(TAG, "合约调用结果解析失败");
+        cJSON_Delete(json);
+        return;
+    }
+    
+    const char* encoded_result = result_obj->valuestring;
+    ESP_LOGI(TAG, "合约返回的编码数据: %s", encoded_result);
+    
+    // 确保编码结果有效且不为空
+    if (!encoded_result || strlen(encoded_result) < 2) {
+        ESP_LOGE(TAG, "返回的编码数据无效");
+        cJSON_Delete(json);
+        return;
+    }
+    
+    // 将十六进制编码结果转换为二进制数据
+    uint8_t binary_data[4096] = {0}; // 增加缓冲区大小
+    size_t binary_len = 0;
+    
+    err = abi_hex_to_binary(encoded_result, binary_data, sizeof(binary_data), &binary_len);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "十六进制转二进制失败: %s", esp_err_to_name(err));
+        cJSON_Delete(json);
+        return;
+    }
+    
+    if (binary_len == 0) {
+        ESP_LOGE(TAG, "二进制数据长度为0");
+        cJSON_Delete(json);
+        return;
+    }
+    
+    // 解码返回的三个字符串
+    abi_decoded_value_t decoded_values[3] = {0}; // 三个字符串
+    size_t decoded_count = 0;
+    
+    // 在解码前清空结构体
+    memset(decoded_values, 0, sizeof(decoded_values));
+    
+    err = abi_decode_returns(binary_data, binary_len, decoded_values, 3, &decoded_count);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "解码返回值失败: %s", esp_err_to_name(err));
+        cJSON_Delete(json);
+        return;
+    }
+    
+    ESP_LOGI(TAG, "成功解码 %d 个返回值", decoded_count);
+    
+    // 显示解码后的字符串
+    for (size_t i = 0; i < decoded_count; i++) {
+        if (decoded_values[i].value.string) {
+            ESP_LOGI(TAG, "返回值 %d: %s", i+1, decoded_values[i].value.string);
+        } else {
+            ESP_LOGI(TAG, "返回值 %d: <null>", i+1);
+        }
+    }
+    
+    // 释放分配的内存
+    for (size_t i = 0; i < decoded_count; i++) {
+        abi_free_decoded_value(&decoded_values[i]);
+    }
+    
+    cJSON_Delete(json);
+}
 
 void ethereum_test_task(void *pvParameter)
 {   
@@ -292,6 +485,15 @@ void ethereum_test_task(void *pvParameter)
     /* 测试ERC20代币转账签名 (如果有相应合约) */
     // test_erc20_transfer(&context);
     
+    /* 测试ABI编码 */
+    test_abi_encoding(&context);
+
+    /* 增加延迟，避免连续的RPC调用可能导致的内存或同步问题 */
+    vTaskDelay(pdMS_TO_TICKS(500));
+
+    /* 测试调用合约函数 */
+    test_get_author_info(&context);
+    
     /* 清理web3上下文 */
     web3_cleanup(&context);
     vTaskDelete(NULL);
@@ -310,8 +512,8 @@ void app_main(void)
     /* 初始化WiFi */
     wifi_init_sta();
     
-    /* 创建Ethereum测试任务 */
-    xTaskCreate(&ethereum_test_task, "ethereum_test_task", 8192, NULL, 5, NULL);
+    /* 创建Ethereum测试任务 - 增加堆栈大小 */
+    xTaskCreate(&ethereum_test_task, "ethereum_test_task", 16384, NULL, 5, NULL);
     
     printf("Ethereum RPC test 开始\n");
 }

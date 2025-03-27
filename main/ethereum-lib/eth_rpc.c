@@ -1071,3 +1071,63 @@ esp_err_t eth_getCode(web3_context_t* context, const char* address,
     cJSON_Delete(json);
     return ESP_OK;
 }
+
+esp_err_t eth_call(web3_context_t* context, const char* to_address, const char* data, 
+                  const char* block, char* result, size_t result_len)
+{
+    if (!context || !to_address || !data || !result || result_len == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    // 构造参数: [{"to":"合约地址", "data":"函数调用数据"}, "区块号"]
+    char params[512];
+    snprintf(params, sizeof(params), 
+             "[{\"to\":\"%s\",\"data\":\"%s\"},\"%s\"]", 
+             to_address, data, block ? block : "latest");
+
+    // 发送RPC请求
+    char response[4096] = {0}; // 较大的缓冲区以容纳可能的大型返回数据
+    esp_err_t err = web3_send_request(context, "eth_call", params, response, sizeof(response));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "eth_call request failed: %s", esp_err_to_name(err));
+        return err;
+    }
+
+    // 解析JSON响应
+    cJSON* json = cJSON_Parse(response);
+    if (!json) {
+        ESP_LOGE(TAG, "Failed to parse JSON response");
+        return ESP_FAIL;
+    }
+
+    // 获取返回值
+    cJSON* result_obj = cJSON_GetObjectItem(json, "result");
+    if (!result_obj) {
+        ESP_LOGE(TAG, "No 'result' field in JSON response");
+        
+        // 检查是否有错误信息
+        cJSON* error_obj = cJSON_GetObjectItem(json, "error");
+        if (error_obj) {
+            cJSON* error_message = cJSON_GetObjectItem(error_obj, "message");
+            if (error_message && cJSON_IsString(error_message)) {
+                ESP_LOGE(TAG, "Error from Ethereum node: %s", error_message->valuestring);
+            }
+        }
+        
+        cJSON_Delete(json);
+        return ESP_FAIL;
+    }
+
+    // 复制返回值到输出缓冲区
+    if (cJSON_IsString(result_obj)) {
+        strncpy(result, result_obj->valuestring, result_len - 1);
+        result[result_len - 1] = '\0'; // 确保字符串以null字符结尾
+    } else {
+        ESP_LOGE(TAG, "Result field is not a string");
+        cJSON_Delete(json);
+        return ESP_FAIL;
+    }
+    
+    cJSON_Delete(json);
+    return ESP_OK;
+}
