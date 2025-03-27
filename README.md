@@ -5,7 +5,14 @@
 ![ESP-IDF](https://img.shields.io/badge/ESP--IDF-v5.x-orange)
 
 <p align="center">
-  <img src="https://ethereum.org/static/28214bb68eb5445dcb063a72535bc90c/9019e/hero.png" width="200" alt="Ethereum Logo"/>
+  <svg fill="currentColor" width="200" height="310" viewBox="0 0 115 182" xmlns="http://www.w3.org/2000/svg">
+    <path d="M57.5054 181V135.84L1.64064 103.171L57.5054 181Z" fill="#F0CDC2" stroke="#1616B4" stroke-linejoin="round"></path>
+    <path d="M57.6906 181V135.84L113.555 103.171L57.6906 181Z" fill="#C9B3F5" stroke="#1616B4" stroke-linejoin="round"></path>
+    <path d="M57.5055 124.615V66.9786L1 92.2811L57.5055 124.615Z" fill="#88AAF1" stroke="#1616B4" stroke-linejoin="round"></path>
+    <path d="M57.6903 124.615V66.9786L114.196 92.2811L57.6903 124.615Z" fill="#C9B3F5" stroke="#1616B4" stroke-linejoin="round"></path>
+    <path d="M1.00006 92.2811L57.5054 1V66.9786L1.00006 92.2811Z" fill="#F0CDC2" stroke="#1616B4" stroke-linejoin="round"></path>
+    <path d="M114.196 92.2811L57.6906 1V66.9786L114.196 92.2811Z" fill="#B8FAF6" stroke="#1616B4" stroke-linejoin="round"></path>
+  </svg>
   <img src="https://www.espressif.com/sites/all/themes/espressif/logo-black.svg" width="200" alt="Espressif Logo"/>
 </p>
 
@@ -71,8 +78,8 @@ ESP32 Ethereum Client Library 是一个强大的轻量级库，让您的 ESP32 �
 1. **克隆仓库**
 
 ```bash
-git clone https://github.com/yourusername/esp32-ethereum-lib.git
-cd esp32-ethereum-lib
+git clone git@github.com:Lingwcy/ethereum-rpc-lib-esp32.git
+cd ethereum-rpc-lib
 ```
 
 2. **设置 ESP-IDF 环境**
@@ -203,17 +210,7 @@ err = eth_getCode(
 );
 ```
 
-## 📊 架构设计
 
-该库采用模块化设计，主要包含以下组件：
-
-- **web3.c/h**: 核心组件，负责 HTTP 通信和 JSON-RPC 请求处理
-- **eth_rpc.c/h**: 以太坊 RPC 方法实现
-- **net_test.c/h**: 网络连接测试模块
-
-<p align="center">
-  <img src="https://your-repo-url/docs/architecture.png" width="600" alt="架构图"/>
-</p>
 
 ## 🔍 故障排除
 
@@ -257,7 +254,7 @@ err = eth_getCode(
 
 ## 📧 联系方式
 
-如有任何问题或建议，请通过 [issues](https://github.com/yourusername/esp32-ethereum-lib/issues) 或 email@example.com 联系我们。
+如有任何问题或建议，请通过 [issues](https://github.com/yourusername/esp32-ethereum-lib/issues) 或 lingwcyovo@gmail.com 联系我们。
 
 ---
 
