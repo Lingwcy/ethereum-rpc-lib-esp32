@@ -5,8 +5,20 @@ idf_component_register(
         "ethereum-lib/eth_rpc.c"
         "ethereum-lib/net_test.c"
         "ethereum-lib/eth_abi.c"
-    INCLUDE_DIRS "."
-    REQUIRES esp_http_client json nvs_flash esp_wifi esp-tls lwip 
+        "ethereum-lib/eth_sign.c"
+        "farmkeeper-rpc/device/device.c"
+    INCLUDE_DIRS 
+        "."
+        "ethereum-lib"
+        "farmkeeper-rpc"
+        "farmkeeper-rpc/device"
+    REQUIRES 
+        esp_http_client 
+        json 
+        nvs_flash 
+        esp_wifi 
+        esp-tls 
+        lwip
 )
 
 # 增加组件特定堆大小

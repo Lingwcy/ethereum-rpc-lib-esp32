@@ -1195,8 +1195,8 @@
             "managed_reqs": [],
             "managed_priv_reqs": [],
             "file": "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/build/esp-idf/main/libmain.a",
-            "sources": [ "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/main.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/web3.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/eth_rpc.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/net_test.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/eth_abi.c" ],
-            "include_dirs": [ "." ]
+            "sources": [ "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/main.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/web3.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/eth_rpc.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/net_test.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/eth_abi.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/ethereum-lib/eth_sign.c", "/home/ling/桌面/ESP32/ESP32project/ethereum-lib-test/main/farmkeeper-rpc/device/device.c" ],
+            "include_dirs": [ ".", "ethereum-lib", "farmkeeper-rpc", "farmkeeper-rpc/device" ]
         },
         "mbedtls": {
             "alias": "idf::mbedtls",
@@ -2860,7 +2860,7 @@
             "priv_reqs": [],
             "managed_reqs": [],
             "managed_priv_reqs": [],
-            "include_dirs": [ "." ]
+            "include_dirs": [ ".", "ethereum-lib", "farmkeeper-rpc", "farmkeeper-rpc/device" ]
         }
     },
     "debug_prefix_map_gdbinit": ""

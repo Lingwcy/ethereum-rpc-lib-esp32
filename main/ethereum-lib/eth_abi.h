@@ -1,3 +1,13 @@
+/*
+    ABI编码基本流程：
+    1. 计算函数选择器
+    2. 对每个参数进行ABI编码
+    3. 将函数选择器和参数编码结果拼接在一起
+    4. 返回完整的ABI编码数据
+    5. 将编码后的数据转换为十六进制字符串
+
+*/
+
 #ifndef ETH_ABI_H
 #define ETH_ABI_H
 
@@ -52,7 +62,7 @@ typedef struct {
 } abi_decoded_value_t;
 
 /**
- * @brief 计算函数选择器
+ * @brief 计算函数选择器 - 函数选择器是函数签名的Keccak256哈希值的前4个字节
  * 
  * @param context web3上下文
  * @param signature 函数签名 (如 "transfer(address,uint256)")

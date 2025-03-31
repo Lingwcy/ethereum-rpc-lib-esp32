@@ -167,7 +167,18 @@ esp_err_t abi_encode_params(const abi_param_t* params, size_t param_count, uint8
     if (output_len < head_size) {
         return ESP_ERR_INVALID_SIZE;
     }
+    /*
     
+    [头部区域]
+    0-31字节:   参数a的值(123)                - 静态类型直接存值
+    32-63字节:  参数b的数据位置偏移量(96)     - 动态类型存偏移量
+    64-95字节:  参数c的值(456)                - 静态类型直接存值
+
+    [数据区域]
+    96-127字节: 参数b的长度(5)                - 动态参数先存长度
+    128-159字节: 参数b的数据("hello"加填充)   - 再存实际数据(右侧填充0至32字节)
+    
+    */
     // 先处理静态参数
     size_t dynamic_data_offset = head_size;
     size_t current_offset = 0;

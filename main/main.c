@@ -11,6 +11,7 @@
 #include "ethereum-lib/eth_rpc.h"
 #include "ethereum-lib/net_test.h"
 #include "ethereum-lib/eth_abi.h"
+#include "farmkeeper-rpc/device/device.h"
 
 #include "cJSON.h"
 static const char *TAG = "ETHEREUM_TEST";
@@ -93,12 +94,8 @@ typedef struct {
 // Test account data
 static const eth_account_t test_accounts[] = {
     {
-        .address = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266", // anvil default account
-        .private_key = "0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80"
-    },
-    {
-        .address = "0x70997970C51812dc3A010C7d01b50e0d17dc79C8", // anvil account #1
-        .private_key = "0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
+        .address = "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720", // anvil default account
+        .private_key = "0x2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6"
     }
 };
 
@@ -333,7 +330,7 @@ void test_get_author_info(web3_context_t* context) {
     char hex_data[16] = {0}; // 足够容纳0x + 8个十六进制字符
     err = abi_binary_to_hex(encoded, encoded_len, hex_data, sizeof(hex_data));
     if (err != ESP_OK) {
-        ESP_LOGE(TAG, "二进制转十六进制失败: %s", esp_err_to_name(err));
+        ESP_LOGE(TAG, "十六进制转二进制失败: %s", esp_err_to_name(err));
         return;
     }
     
@@ -432,9 +429,368 @@ void test_get_author_info(web3_context_t* context) {
     cJSON_Delete(json);
 }
 
+// 测试调用addFarm合约方法
+void test_add_farm(web3_context_t* context) {
+    ESP_LOGI(TAG, "测试添加农田合约方法...");
+    
+    // 合约地址
+    const char* contract_address = "0xeC4cFde48EAdca2bC63E94BB437BbeAcE1371bF3";
+    
+    // 准备Location结构体参数
+    uint8_t latitude_bytes[32] = {0}; // 初始化为零
+    uint8_t longitude_bytes[32] = {0}; // 初始化为零
+    
+    // 设置纬度为3456789（34.56789度，5位小数）
+    latitude_bytes[31] = 0x15;
+    latitude_bytes[30] = 0xFA;
+    latitude_bytes[29] = 0x05;
+    
+    // 设置经度为1234567（12.34567度，5位小数）
+    longitude_bytes[31] = 0x12;
+    longitude_bytes[30] = 0xD6;
+    longitude_bytes[29] = 0x87;
+    
+    // 定义Location结构体的参数数组
+    abi_param_t location_params[2] = {
+        ABI_UINT(256, latitude_bytes),     // 纬度
+        ABI_UINT(256, longitude_bytes)     // 经度
+    };
+    
+    // 编码函数调用
+    uint8_t encoded[512] = {0};
+    size_t encoded_len = 0;
+    esp_err_t err = abi_encode_function_call(
+        context,
+        "addFarm((uint256,uint256))",  // 带结构体类型的函数签名
+        location_params,
+        2,
+        encoded,
+        sizeof(encoded),
+        &encoded_len
+    );
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "编码addFarm函数调用失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    // 将二进制数据转换为十六进制以用于交易
+    char hex_data[1024] = {0};
+    err = abi_binary_to_hex(encoded, encoded_len, hex_data, sizeof(hex_data));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "二进制转十六进制失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    ESP_LOGI(TAG, "编码后的函数调用数据: %s", hex_data);
+    
+    // 获取发送者地址和nonce
+    const char* from_address = test_accounts[0].address;
+    
+    char nonce[32] = {0};
+    err = eth_getTransactionCount(context, from_address, nonce, sizeof(nonce));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "获取nonce失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    // 获取gas价格
+    char gas_price[64] = {0};
+    err = get_eth_gasPrice(context, gas_price, sizeof(gas_price));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "获取gas价格失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    // 提取十六进制gas价格
+    char gas_price_hex[32] = {0};
+    if (strncmp(gas_price, "0x", 2) == 0) {
+        char* end = strchr(gas_price, ' ');
+        if (!end) {
+            end = strchr(gas_price, '(');
+        }
+        
+        if (end) {
+            size_t hex_len = end - gas_price;
+            strncpy(gas_price_hex, gas_price, hex_len);
+            gas_price_hex[hex_len] = '\0';
+        } else {
+            strcpy(gas_price_hex, gas_price);
+        }
+    } else {
+        strcpy(gas_price_hex, "0x1");
+    }
+    
+    // 为合约交互设置更高的gas限制
+    const char* gas = "0x100000"; // 为合约调用设置更高的gas限制
+    
+    // 签署交易
+    char signed_tx[1024] = {0};
+    err = eth_signTransaction(
+        context,
+        from_address,
+        contract_address,
+        gas,
+        gas_price_hex,
+        "0x0", // 不发送ETH
+        hex_data,
+        nonce,
+        signed_tx,
+        sizeof(signed_tx)
+    );
+    
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "签署交易失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    ESP_LOGI(TAG, "交易签署成功");
+    
+    // 发送交易
+    char tx_hash[128] = {0};
+    err = eth_sendRawTransaction(context, signed_tx, tx_hash, sizeof(tx_hash));
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "发送交易失败: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    ESP_LOGI(TAG, "交易发送成功。哈希: %s", tx_hash);
+    
+    // 等待一段时间，然后检查交易收据
+    vTaskDelay(pdMS_TO_TICKS(2000));
+    
+    char receipt[2048] = {0};
+    err = eth_get_transaction_receipt(context, tx_hash, receipt, sizeof(receipt));
+    if (err == ESP_OK) {
+        ESP_LOGI(TAG, "交易收据: %s", receipt);
+    } else {
+        ESP_LOGW(TAG, "获取交易收据失败（可能仍在等待确认）: %s", esp_err_to_name(err));
+    }
+}
+
+// 测试设备挑战功能
+void test_device_challenge(web3_context_t* context) {
+    ESP_LOGI(TAG, "设备可信连接测试开始 (ESP32 side)...");
+    
+    // Configure the device
+    farmkeeper_device_config_t device_config = {
+        .web3_ctx = context,
+        .contract_address = "0xeC4cFde48EAdca2bC63E94BB437BbeAcE1371bF3", // FarmKeeper contract address
+        .device_private_key = test_accounts[0].private_key,  // Use test account #0 as the device  // Removed 0x prefix
+        .device_address = test_accounts[0].address,
+        .device_id = 0,  // Device ID in the blockchain
+        .poll_interval_ms = 30000  // Check every 30 seconds
+    };
+    
+    // Initialize the device challenge module
+    esp_err_t err = farmkeeper_device_init(&device_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to initialize device challenge module: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    // Device role: Check for challenges and respond to them
+    ESP_LOGI(TAG, "Device is checking for pending challenges...");
+    
+    // Check if there's a pending challenge
+    bool has_challenge = false;
+    err = farmkeeper_device_has_challenge(&has_challenge);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "Failed to check for challenge: %s", esp_err_to_name(err));
+        return;
+    }
+    
+    if (has_challenge) {
+        ESP_LOGI(TAG, "Device found a pending challenge - responding to it...");
+        
+        // Get the challenge
+        char challenge[512] = {0};
+        err = farmkeeper_device_get_challenge(challenge, sizeof(challenge));
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to get challenge: %s", esp_err_to_name(err));
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Retrieved challenge: %s", challenge);
+        
+        // Sign and verify the challenge
+        err = farmkeeper_device_verify_challenge(challenge);
+        if (err != ESP_OK) {
+            ESP_LOGE(TAG, "Failed to verify challenge: %s", esp_err_to_name(err));
+            return;
+        }
+        
+        ESP_LOGI(TAG, "Challenge verification successful!");
+    } else {
+        ESP_LOGI(TAG, "No pending challenge for the device");
+        ESP_LOGI(TAG, "In a real device, we would set up a periodic task to poll for challenges");
+        ESP_LOGI(TAG, "Use the web interface to create a challenge for this device (ID: 1)");
+    }
+    
+    // In a real application, this would be a recurring task
+    ESP_LOGI(TAG, "In production, use the following task structure to continuously monitor for challenges:");
+    ESP_LOGI(TAG, "void device_challenge_task(void *pvParameter) {");
+    ESP_LOGI(TAG, "    while(1) {");
+    ESP_LOGI(TAG, "        farmkeeper_device_check_and_respond_challenge();");
+    ESP_LOGI(TAG, "        vTaskDelay(pdMS_TO_TICKS(device_config.poll_interval_ms));");
+    ESP_LOGI(TAG, "    }");
+    ESP_LOGI(TAG, "}");
+}
+
+// 设备挑战监听任务 - 持续运行并检查链上挑战
+void device_challenge_monitor_task(void *pvParameter) {
+    farmkeeper_device_config_t *input_config = (farmkeeper_device_config_t*)pvParameter;
+    
+    // 获取web3上下文
+    web3_context_t context;
+    
+    // 使用静态字符串而非局部变量指针
+    const char* eth_url = "http://192.168.1.100:8545"; // RPC URL
+    ESP_LOGI(TAG, "设备挑战监听任务启动，初始化Web3...");
+    esp_err_t err = web3_init(&context, eth_url);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "初始化web3失败: %s", esp_err_to_name(err));
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    // 创建新的设备配置结构，确保深度复制所有指针数据
+    farmkeeper_device_config_t device_config = {
+        .web3_ctx = &context,
+        .contract_address = input_config->contract_address, // 指向静态内存的字符串
+        .device_private_key = input_config->device_private_key, // 指向静态内存的字符串
+        .device_address = input_config->device_address, // 指向静态内存的字符串  
+        .device_id = input_config->device_id,
+        .poll_interval_ms = input_config->poll_interval_ms
+    };
+    
+    err = farmkeeper_device_init(&device_config);
+    if (err != ESP_OK) {
+        ESP_LOGE(TAG, "初始化设备挑战模块失败: %s", esp_err_to_name(err));
+        web3_cleanup(&context);
+        vTaskDelete(NULL);
+        return;
+    }
+    
+    ESP_LOGI(TAG, "设备挑战监听任务已启动 - 设备ID: %d", device_config.device_id);
+    ESP_LOGI(TAG, "使用合约地址: %s", device_config.contract_address);
+    ESP_LOGI(TAG, "使用设备地址: %s", device_config.device_address);
+    ESP_LOGI(TAG, "开始持续监听链上挑战...");
+    
+    // 缩短检查间隔，以便更快响应挑战
+    const int CHECK_INTERVAL_MS = 3000; // 每3秒检查一次
+    
+    // 记录上次挑战检查时间
+    TickType_t last_check_time = xTaskGetTickCount();
+    int retry_count = 0;
+    
+    // 主循环 - 持续检查并响应链上挑战
+    while (1) {
+        bool has_challenge = false;
+        
+        // 检查是否有挑战
+        err = farmkeeper_device_has_challenge(&has_challenge);
+        
+        // 打印更多调试信息
+        ESP_LOGI(TAG, "检查设备ID %d 挑战状态: %s (尝试 %d)", 
+                device_config.device_id, 
+                has_challenge ? "有挑战" : "无挑战",
+                retry_count++);
+        
+        // 尝试直接通过RPC调用获取挑战内容
+        if (!has_challenge && (retry_count % 5 == 0)) {
+            // 构造eth_call调用来查询设备挑战状态
+            uint8_t encoded_call[256] = {0};
+            size_t encoded_len = 0;
+            
+            // 准备deviceId参数
+            uint8_t device_id_bytes[32] = {0};
+            device_id_bytes[31] = device_config.device_id & 0xFF;
+            
+            // 定义参数
+            abi_param_t param = ABI_UINT(256, device_id_bytes);
+            
+            // 编码getDeviceChallenge函数调用
+            err = abi_encode_function_call(
+                device_config.web3_ctx,
+                "getDeviceChallenge(uint256)",
+                &param, 
+                1, 
+                encoded_call, 
+                sizeof(encoded_call), 
+                &encoded_len
+            );
+            
+            if (err == ESP_OK) {
+                // 将调用数据转为16进制
+                char encoded_hex[512] = {0};
+                err = abi_binary_to_hex(encoded_call, encoded_len, encoded_hex, sizeof(encoded_hex));
+                
+                if (err == ESP_OK) {
+                    // 尝试手动调用getDeviceChallenge
+                    char challenge_result[1024] = {0};
+                    err = eth_call(device_config.web3_ctx, device_config.contract_address, 
+                                   encoded_hex, "latest", challenge_result, sizeof(challenge_result));
+                    
+                    if (err == ESP_OK) {
+                        // 分析结果
+                        ESP_LOGI(TAG, "手动查询挑战结果: %s", challenge_result);
+                        
+                        // 如果不是空响应，可能实际上有挑战
+                        if (strcmp(challenge_result, "0x") != 0) {
+                            ESP_LOGI(TAG, "检测到可能的挑战，尝试强制处理");
+                            has_challenge = true;
+                        }
+                    }
+                }
+            }
+        }
+        
+        if (err == ESP_OK && has_challenge) {
+            ESP_LOGI(TAG, "检测到新的链上挑战，正在处理...");
+            
+            // 获取挑战内容
+            char challenge[512] = {0};
+            err = farmkeeper_device_get_challenge(challenge, sizeof(challenge));
+            if (err == ESP_OK) {
+                ESP_LOGI(TAG, "挑战内容: %s", challenge);
+                
+                // 签名并验证挑战 - 这会直接发送交易到链上
+                err = farmkeeper_device_verify_challenge(challenge);
+                if (err == ESP_OK) {
+                    ESP_LOGI(TAG, "挑战验证成功! 设备状态已更新");
+                    retry_count = 0; // 重置计数器
+                } else {
+                    ESP_LOGE(TAG, "挑战验证失败: %s", esp_err_to_name(err));
+                }
+            } else {
+                ESP_LOGE(TAG, "获取挑战内容失败: %s", esp_err_to_name(err));
+            }
+        } else if (err != ESP_OK) {
+            ESP_LOGW(TAG, "检查挑战状态失败: %s", esp_err_to_name(err));
+            // 防止因错误而频繁重试
+            vTaskDelay(pdMS_TO_TICKS(5000)); // 错误后等待5秒
+            continue;
+        }
+        
+        // 动态调整检查间隔
+        if (retry_count > 30) {
+            // 如果长时间没有挑战，增加间隔时间减少资源消耗
+            vTaskDelay(pdMS_TO_TICKS(10000)); // 10秒
+        } else {
+            // 正常间隔
+            vTaskDelay(pdMS_TO_TICKS(CHECK_INTERVAL_MS));
+        }
+    }
+    
+    // 此处实际不会到达
+    web3_cleanup(&context);
+    vTaskDelete(NULL);
+}
+
 void ethereum_test_task(void *pvParameter)
 {   
-    const char* eth_url = "http://192.168.1.112:8545"; // Hardhat/Ganache RPC URL
+    const char* eth_url = "http://192.168.1.100:8545"; // Hardhat/Ganache RPC URL
     
     // 先测试网络连接
     ESP_LOGI(TAG, "测试到以太坊节点的网络连接...");
@@ -479,20 +835,29 @@ void ethereum_test_task(void *pvParameter)
         ESP_LOGE(TAG, "获取网络ID失败: %s", esp_err_to_name(err));
     }
     
-    /* 测试交易签名功能 */
-    test_transaction_signing(&context);
+    // /* 测试交易签名功能 */
+    // test_transaction_signing(&context);
     
-    /* 测试ERC20代币转账签名 (如果有相应合约) */
-    // test_erc20_transfer(&context);
+    // /* 测试ERC20代币转账签名 (如果有相应合约) */
+    // // test_erc20_transfer(&context);
     
-    /* 测试ABI编码 */
-    test_abi_encoding(&context);
+    // /* 测试ABI编码 */
+    // test_abi_encoding(&context);
 
-    /* 增加延迟，避免连续的RPC调用可能导致的内存或同步问题 */
+    // /* 增加延迟，避免连续的RPC调用可能导致的内存或同步问题 */
+    // vTaskDelay(pdMS_TO_TICKS(500));
+
+    // /* 测试调用合约函数 */
+    // test_get_author_info(&context);
+    
+    /* 增加延迟 */
     vTaskDelay(pdMS_TO_TICKS(500));
-
-    /* 测试调用合约函数 */
-    test_get_author_info(&context);
+    
+    // /* 测试调用addFarm合约方法 */
+    // test_add_farm(&context);
+    
+    // /* 测试设备挑战功能 */
+    // test_device_challenge(&context);
     
     /* 清理web3上下文 */
     web3_cleanup(&context);
@@ -512,8 +877,18 @@ void app_main(void)
     /* 初始化WiFi */
     wifi_init_sta();
     
-    /* 创建Ethereum测试任务 - 增加堆栈大小 */
-    xTaskCreate(&ethereum_test_task, "ethereum_test_task", 16384, NULL, 5, NULL);
+    /* 创建设备挑战监听任务 */
+    static farmkeeper_device_config_t device_config = {
+        // CRITICAL: Contract address must be exact match for latest deployment
+        .contract_address = "0xB5d064b44960FdedA1072f983C3E8f1e123cE154", // From log
+        .device_private_key = "2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6", 
+        .device_address = "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720", 
+        .device_id = 0,
+        .poll_interval_ms = 3000
+    };
+    
+    // Create a higher-priority task for device monitoring to ensure it gets CPU time
+    xTaskCreatePinnedToCore(&device_challenge_monitor_task, "device_monitor", 16384, (void*)&device_config, 5, NULL, 1);
     
     printf("Ethereum RPC test 开始\n");
 }
