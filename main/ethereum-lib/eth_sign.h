@@ -3,6 +3,39 @@
 
 #include <stdint.h>
 #include <esp_err.h>
+#include "web3.h"  // Add this to access web3_context_t
+
+/**
+ * @brief Create a personal message with Ethereum prefix
+ * 
+ * @param message Original message bytes
+ * @param message_len Length of the message
+ * @param prefixed_message Output parameter to store the prefixed message
+ * @param prefixed_len Output parameter to store the length of the prefixed message
+ * @return esp_err_t ESP_OK on success, error code otherwise
+ */
+esp_err_t create_personal_message(
+    const uint8_t* message, 
+    size_t message_len, 
+    uint8_t** prefixed_message, 
+    size_t* prefixed_len
+);
+
+/**
+ * @brief Get the Keccak256 hash via RPC
+ * 
+ * @param web3_ctx Web3 context for making RPC calls
+ * @param message The message to hash
+ * @param message_len Length of the message
+ * @param hash_out Output buffer for the hash (must be 32 bytes)
+ * @return esp_err_t ESP_OK on success, error code otherwise
+ */
+esp_err_t get_keccak256_via_rpc(
+    web3_context_t* web3_ctx, 
+    const uint8_t* message, 
+    size_t message_len, 
+    uint8_t* hash_out
+);
 
 /**
  * @brief Sign a message using an Ethereum private key

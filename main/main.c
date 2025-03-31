@@ -249,11 +249,6 @@ void test_abi_encoding(web3_context_t* context) {
         sscanf(&to_address[2+i*2], "%2hhx", &to_addr_bytes[i]);
     }
     
-    // 金额: 1.0 ETH = 1000000000000000000 wei (1后面18个0)
-    uint8_t amount[32] = {0};
-    // 设置为1.0 ETH (大端序)
-    amount[31] = 1; // 最低位设为1
-    
     // 修复one_eth数组，确保正好32个元素
     const uint8_t one_eth[32] = {
         0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
@@ -637,7 +632,7 @@ void test_device_challenge(web3_context_t* context) {
     ESP_LOGI(TAG, "}");
 }
 
-// 设备挑战监听任务 - 持续运行并检查链上挑战
+// 设备挑战监听任务 - 简化版本，验证成功后自动退出
 void device_challenge_monitor_task(void *pvParameter) {
     farmkeeper_device_config_t *input_config = (farmkeeper_device_config_t*)pvParameter;
     
@@ -657,9 +652,9 @@ void device_challenge_monitor_task(void *pvParameter) {
     // 创建新的设备配置结构，确保深度复制所有指针数据
     farmkeeper_device_config_t device_config = {
         .web3_ctx = &context,
-        .contract_address = input_config->contract_address, // 指向静态内存的字符串
-        .device_private_key = input_config->device_private_key, // 指向静态内存的字符串
-        .device_address = input_config->device_address, // 指向静态内存的字符串  
+        .contract_address = input_config->contract_address,
+        .device_private_key = input_config->device_private_key,
+        .device_address = input_config->device_address,  
         .device_id = input_config->device_id,
         .poll_interval_ms = input_config->poll_interval_ms
     };
@@ -673,81 +668,28 @@ void device_challenge_monitor_task(void *pvParameter) {
     }
     
     ESP_LOGI(TAG, "设备挑战监听任务已启动 - 设备ID: %d", device_config.device_id);
-    ESP_LOGI(TAG, "使用合约地址: %s", device_config.contract_address);
-    ESP_LOGI(TAG, "使用设备地址: %s", device_config.device_address);
     ESP_LOGI(TAG, "开始持续监听链上挑战...");
     
-    // 缩短检查间隔，以便更快响应挑战
+    // 设置检查间隔
     const int CHECK_INTERVAL_MS = 3000; // 每3秒检查一次
+    int attempts = 0;
+    const int MAX_ATTEMPTS = 100; // 最多尝试100次，防止无限循环
     
-    // 记录上次挑战检查时间
-    TickType_t last_check_time = xTaskGetTickCount();
-    int retry_count = 0;
-    
-    // 主循环 - 持续检查并响应链上挑战
-    while (1) {
+    // 主循环 - 持续检查并响应链上挑战，成功后自动退出
+    while (attempts < MAX_ATTEMPTS) {
+        attempts++;
         bool has_challenge = false;
         
         // 检查是否有挑战
         err = farmkeeper_device_has_challenge(&has_challenge);
-        
-        // 打印更多调试信息
-        ESP_LOGI(TAG, "检查设备ID %d 挑战状态: %s (尝试 %d)", 
-                device_config.device_id, 
-                has_challenge ? "有挑战" : "无挑战",
-                retry_count++);
-        
-        // 尝试直接通过RPC调用获取挑战内容
-        if (!has_challenge && (retry_count % 5 == 0)) {
-            // 构造eth_call调用来查询设备挑战状态
-            uint8_t encoded_call[256] = {0};
-            size_t encoded_len = 0;
-            
-            // 准备deviceId参数
-            uint8_t device_id_bytes[32] = {0};
-            device_id_bytes[31] = device_config.device_id & 0xFF;
-            
-            // 定义参数
-            abi_param_t param = ABI_UINT(256, device_id_bytes);
-            
-            // 编码getDeviceChallenge函数调用
-            err = abi_encode_function_call(
-                device_config.web3_ctx,
-                "getDeviceChallenge(uint256)",
-                &param, 
-                1, 
-                encoded_call, 
-                sizeof(encoded_call), 
-                &encoded_len
-            );
-            
-            if (err == ESP_OK) {
-                // 将调用数据转为16进制
-                char encoded_hex[512] = {0};
-                err = abi_binary_to_hex(encoded_call, encoded_len, encoded_hex, sizeof(encoded_hex));
-                
-                if (err == ESP_OK) {
-                    // 尝试手动调用getDeviceChallenge
-                    char challenge_result[1024] = {0};
-                    err = eth_call(device_config.web3_ctx, device_config.contract_address, 
-                                   encoded_hex, "latest", challenge_result, sizeof(challenge_result));
-                    
-                    if (err == ESP_OK) {
-                        // 分析结果
-                        ESP_LOGI(TAG, "手动查询挑战结果: %s", challenge_result);
-                        
-                        // 如果不是空响应，可能实际上有挑战
-                        if (strcmp(challenge_result, "0x") != 0) {
-                            ESP_LOGI(TAG, "检测到可能的挑战，尝试强制处理");
-                            has_challenge = true;
-                        }
-                    }
-                }
-            }
+        if (err != ESP_OK) {
+            ESP_LOGW(TAG, "检查挑战状态失败: %s", esp_err_to_name(err));
+            vTaskDelay(pdMS_TO_TICKS(5000)); // 错误后等待5秒
+            continue;
         }
         
-        if (err == ESP_OK && has_challenge) {
-            ESP_LOGI(TAG, "检测到新的链上挑战，正在处理...");
+        if (has_challenge) {
+            ESP_LOGI(TAG, "检测到链上挑战，正在处理...");
             
             // 获取挑战内容
             char challenge[512] = {0};
@@ -755,35 +697,38 @@ void device_challenge_monitor_task(void *pvParameter) {
             if (err == ESP_OK) {
                 ESP_LOGI(TAG, "挑战内容: %s", challenge);
                 
-                // 签名并验证挑战 - 这会直接发送交易到链上
+                // 签名并验证挑战
                 err = farmkeeper_device_verify_challenge(challenge);
                 if (err == ESP_OK) {
                     ESP_LOGI(TAG, "挑战验证成功! 设备状态已更新");
-                    retry_count = 0; // 重置计数器
+                    
+                    // 重置挑战标志，防止重复挑战
+                    err = farmkeeper_device_reset_challenge_flag();
+                    if (err == ESP_OK) {
+                        ESP_LOGI(TAG, "成功重置挑战标志");
+                    } else {
+                        ESP_LOGW(TAG, "重置挑战标志失败: %s", esp_err_to_name(err));
+                    }
+                    
+                    // 任务完成，退出循环
+                    ESP_LOGI(TAG, "设备挑战响应完成，退出监听任务");
+                    break;
                 } else {
                     ESP_LOGE(TAG, "挑战验证失败: %s", esp_err_to_name(err));
                 }
             } else {
                 ESP_LOGE(TAG, "获取挑战内容失败: %s", esp_err_to_name(err));
             }
-        } else if (err != ESP_OK) {
-            ESP_LOGW(TAG, "检查挑战状态失败: %s", esp_err_to_name(err));
-            // 防止因错误而频繁重试
-            vTaskDelay(pdMS_TO_TICKS(5000)); // 错误后等待5秒
-            continue;
+        } else {
+            ESP_LOGI(TAG, "设备ID %d 无挑战，等待下次检查...", device_config.device_id);
         }
         
-        // 动态调整检查间隔
-        if (retry_count > 30) {
-            // 如果长时间没有挑战，增加间隔时间减少资源消耗
-            vTaskDelay(pdMS_TO_TICKS(10000)); // 10秒
-        } else {
-            // 正常间隔
-            vTaskDelay(pdMS_TO_TICKS(CHECK_INTERVAL_MS));
-        }
+        // 等待下次检查
+        vTaskDelay(pdMS_TO_TICKS(CHECK_INTERVAL_MS));
     }
     
-    // 此处实际不会到达
+    // 清理资源并退出
+    ESP_LOGI(TAG, "设备挑战监听任务结束");
     web3_cleanup(&context);
     vTaskDelete(NULL);
 }
@@ -880,7 +825,7 @@ void app_main(void)
     /* 创建设备挑战监听任务 */
     static farmkeeper_device_config_t device_config = {
         // CRITICAL: Contract address must be exact match for latest deployment
-        .contract_address = "0xB5d064b44960FdedA1072f983C3E8f1e123cE154", // From log
+        .contract_address = "0x8C8e61E4705D1dbEe6DeADb39E67AC77650b0704", // From log
         .device_private_key = "2a871d0798f97d79848a013d4936a73bf4cc922c825d33c1cf7073dff6d409c6", 
         .device_address = "0xa0Ee7A142d267C1f36714E4a8F75612F20a79720", 
         .device_id = 0,
